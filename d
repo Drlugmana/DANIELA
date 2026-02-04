@@ -13,7 +13,7 @@ stages:
   - job: CrearYAML
     displayName: "Crear archivo YAML con variables"
     pool:
-      vmImage: ubuntu-latest   # 🔥 CAMBIO CLAVE
+      vmImage: ubuntu-latest
     steps:
     - checkout: self
 
