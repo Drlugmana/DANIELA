@@ -1,4 +1,3 @@
-
 trigger: none
 
 parameters:
@@ -14,7 +13,7 @@ stages:
   - job: CrearYAML
     displayName: "Crear archivo YAML con variables"
     pool:
-      name: Self-Hosted
+      vmImage: ubuntu-latest   # 🔥 CAMBIO CLAVE
     steps:
     - checkout: self
 
