@@ -1,19 +1,18 @@
-#Variables Globales
-[int] $timeout= 3
- 
-[string] $querySQLVersion= $(
-"
+# =========================
+# Variables Globales
+# =========================
+[int] $timeout = 3
+
+[string] $querySQLVersion = @"
 select substring(@@version,20,8) as Version
-")
- 
- 
-[string] $querySQLLogs= $(
-"
+"@
+
+[string] $querySQLLogs = @"
 WITH CTE AS
 (
     select 
         A.ServerName as Instancia,
-        dateadd(hour,-5,A.UTCOccurrenceDateTime)  as Fecha,
+        dateadd(hour,-5,A.UTCOccurrenceDateTime) as Fecha,
         MI.Name as Alerta,
         A.Heading as Cabecera,
         A.Message as Mensaje,
@@ -25,15 +24,15 @@ WITH CTE AS
             when 0 then 'None'
             else cast(A.Severity as varchar)
         end as Severidad,
-        --
         A.Active
-    from SQLdmRepository.dbo.Alerts as A with (nolock)
-    inner join SQLdmRepository.dbo.MetricInfo as MI with (nolock) ON A.Metric = MI.Metric
+    from SQLdmRepository.dbo.Alerts A with (nolock)
+    inner join SQLdmRepository.dbo.MetricInfo MI with (nolock)
+        ON A.Metric = MI.Metric
     where ServerName is not null
-    and dateadd(hour,-5,A.UTCOccurrenceDateTime) >= dateadd(minute,-30,getdate())
-    and A.Message not like '%login%'
-    and MI.Name IN
-    (
+      and dateadd(hour,-5,A.UTCOccurrenceDateTime) >= dateadd(minute,-30,getdate())
+      and A.Message not like '%login%'
+      and MI.Name IN
+      (
         'Database Full (Percent)',
         'Log Full (Percent)',
         'Database Status',
@@ -44,155 +43,152 @@ WITH CTE AS
         'SQL Server Agent Status',
         'SQL Server Service',
         'Deadlock'
-    )
-    and A.Severity in(8,4)
+      )
+      and A.Severity in (8,4)
 )
- 
 select 
     P.Instancia,
     max(P.Fecha) as Fecha,
     P.Alerta,
     (
-        select top(1)
-            S.Mensaje
-        from CTE as S
-        where 
-        P.Instancia = S.Instancia
-        AND P.Alerta = S.Alerta
-        AND S.Active = '1'
+        select top(1) S.Mensaje
+        from CTE S
+        where P.Instancia = S.Instancia
+          and P.Alerta = S.Alerta
+          and S.Active = '1'
         order by S.Fecha desc
     ) as Mensaje
-from CTE as P
+from CTE P
 group by
     P.Instancia,
     P.Alerta
-having
-    count(1) >= 5
+having count(1) >= 5
 order by 
     P.Instancia, 
-    max(P.Fecha) 
- 
-")
- 
-#Método de ejecucion de sentencias SQL
+    max(P.Fecha)
+"@
+
+# =========================
+# Método de ejecución SQL
+# =========================
 function Exec-SQLQuery ($instance, $querySQL)
 {
-    $connSQL = New-Object System.Data.SqlClient.SqlConnection  
-    $cmdSQL = New-Object System.Data.SqlClient.SqlCommand
-    $daSQL = New-Object System.Data.SqlClient.SqlDataAdapter
-    $dsSQL = New-Object System.Data.DataSet
-    try
-    {    
-        $connSQL.ConnectionString = "Server = $instance; Database = master; Integrated Security = True; Timeout = $timeout"
+    $connSQL = New-Object System.Data.SqlClient.SqlConnection
+    $cmdSQL  = New-Object System.Data.SqlClient.SqlCommand
+    $daSQL   = New-Object System.Data.SqlClient.SqlDataAdapter
+    $dsSQL   = New-Object System.Data.DataSet
+
+    try {
+        $connSQL.ConnectionString = "Server=$instance;Database=master;Integrated Security=True;Connection Timeout=$timeout"
         $cmdSQL.CommandText = $querySQL
         $cmdSQL.Connection = $connSQL
-        $cmdSQL.CommandTimeout = $timeout       
-        $daSQL.SelectCommand = $cmdSQL        
-        $res = $daSQL.Fill($dsSQL)
+        $cmdSQL.CommandTimeout = $timeout
+        $daSQL.SelectCommand = $cmdSQL
+        [void]$daSQL.Fill($dsSQL)
+        return $dsSQL.Tables[0]
     }
-    catch
-    {
+    catch {
         throw $_.Exception
     }
-    finally
-    {
+    finally {
         $dsSQL.Dispose()
         $daSQL.Dispose()
         $cmdSQL.Dispose()
         $connSQL.Dispose()
     }
-    return $dsSQL.Tables[0]
 }
- 
- 
-#Método principal
+
+# =========================
+# Método principal
+# =========================
 function main()
 {
     [string] $strPath = "\\Precwfs003\h$\Backup_SQL_04\Dynatrace\Logs"
-    try
-    {   
-        #Limpio directorio
-        Remove-Item "$strPath\*" -Recurse -Force
-        $arInstancia = New-Object -TypeName System.Collections.ArrayList
-        $dtLogs = Exec-SQLQuery "ECBPPRQ23,11423"  $querySQLLogs 
-        foreach($drLogs in $dtLogs)
-        {      
-            [string] $instancia = $drLogs["Instancia"] 
-            if(!$arInstancia.Contains($instancia))
-            {           
-                [string] $queryInstancias= $(
-                "
-                select 
-                    concat(MachineName,PortNumber) as Instancia1,
-                    concat(MachineName,InstanceName) as Instancia2,
-                    case 
-                        when concat(MachineName,InstanceName) LIKE '%\%' then replace(concat(MachineName,rtrim(ltrim(InstanceName))),'\','_')
-                        else concat(MachineName,rtrim(ltrim(InstanceName))) 
-                    end as Archivo
-                from Administracion_DB.dbo.connectlist
-                where Engine = 'S' and Status <> 'A'
-                and concat(MachineName,InstanceName) = '$instancia'
-                "
-                )
-                $dtInsAUX = Exec-SQLQuery "ECBPPRQ23,11423"  $queryInstancias 
-                foreach($insAux in $dtInsAUX)
-                {      
-                    [string] $instance1 = $insAux["Instancia1"] 
-                    [string] $instance2 = $insAux["Instancia2"]
+
+    try {
+        if (Test-Path $strPath) {
+            Remove-Item "$strPath\*.log" -Force
+        }
+
+        $arInstancia = New-Object System.Collections.ArrayList
+        $dtLogs = Exec-SQLQuery "ECBPPRQ23,11423" $querySQLLogs
+
+        if ($dtLogs.Rows.Count -eq 0) { return }
+
+        foreach ($drLogs in $dtLogs) {
+
+            [string] $instancia = $drLogs["Instancia"].Trim()
+
+            if (!$arInstancia.Contains($instancia)) {
+
+                $instanciaSQL = $instancia.Replace("'","''")
+
+                $queryInstancias = @"
+select 
+    concat(MachineName,',',PortNumber) as Instancia1,
+    concat(MachineName,InstanceName) as Instancia2,
+    case 
+        when concat(MachineName,InstanceName) like '%\%' 
+            then replace(concat(MachineName,rtrim(ltrim(InstanceName))),'\','_')
+        else concat(MachineName,rtrim(ltrim(InstanceName)))
+    end as Archivo
+from Administracion_DB.dbo.connectlist
+where Engine = 'S'
+  and Status <> 'A'
+  and concat(MachineName,InstanceName) = '$instanciaSQL'
+"@
+
+                $dtInsAUX = Exec-SQLQuery "ECBPPRQ23,11423" $queryInstancias
+
+                foreach ($insAux in $dtInsAUX) {
+
+                    [string] $instance1 = $insAux["Instancia1"]
                     $dtVer = Exec-SQLQuery $instance1 $querySQLVersion
-                    [int] $i = 0
-                    foreach($drVer in $dtVer)
-                    {
-                        $i++
-                    }
-                    if($i -ge 1)
-                    {
-                        [string] $versionAux = $drVer["Version"]
-                        if($versionAux.ToString() -like "*2000*" -or $versionAux.ToString() -like "*2005*" -or $versionAux.ToString() -like "*2008*")
-                        {
-                            $arInstancia.Add($instancia) | Out-Null
+
+                    if ($dtVer.Rows.Count -ge 1) {
+
+                        $versionAux = $dtVer.Rows[0]["Version"]
+
+                        if ($versionAux -like "*2000*" -or
+                            $versionAux -like "*2005*" -or
+                            $versionAux -like "*2008*") {
+
+                            [void]$arInstancia.Add($instancia)
                         }
                     }
                 }
             }
         }
-        foreach($instancia in $arInstancia)
-        {
-            #Creo Tabla
-            $tabla = New-Object System.Data.DataTable   
-            #Agrego y Creo Columnas
-            $tabla.Columns.Add("Mensaje", "System.String") | Out-Null
-            #Busco logs por instancia
-            foreach($drLogs in $dtLogs)
-            { 
-                if($instancia -eq $drLogs["Instancia"])
-                {
-                    #Agrego Registros
+
+        foreach ($instancia in $arInstancia) {
+
+            $tabla = New-Object System.Data.DataTable
+            [void]$tabla.Columns.Add("Mensaje",[string])
+
+            foreach ($drLogs in $dtLogs) {
+                if ($instancia -eq $drLogs["Instancia"]) {
                     $row = $tabla.NewRow()
-                    $row.Mensaje = $drLogs["Instancia"] + "`t" + $drLogs["Alerta"] + "`t" + $drLogs["Severidad"] + "`t" + $drLogs["Mensaje"]
+                    $row.Mensaje = "$($drLogs["Instancia"])`t$($drLogs["Alerta"])`t$($drLogs["Severidad"])`t$($drLogs["Mensaje"])"
                     $tabla.Rows.Add($row)
                 }
             }
-            #Construyo parh y archivo
-            [string] $strFile = $instancia.Replace('\','_')
-            [string] $strPathAUX = ""
+
+            $strFile = $instancia.Replace('\','_')
             $strPathAUX = "$strPath\$strFile.log"
-            [string] $mensaje = "OK"
+
             Write-Host ""
-            Write-Host "$instancia" -BackgroundColor DarkYellow -ForegroundColor white 
-            $strPath
-            #Guarda Archivo
-            $tabla
-            $tabla | Format-Table -HideTableHeaders -AutoSize | Out-File -FilePath $strPathAUX -Encoding utf8
+            Write-Host $instancia -BackgroundColor DarkYellow -ForegroundColor White
+
+            $tabla | Format-Table -HideTableHeaders -AutoSize |
+                Out-File -FilePath $strPathAUX -Encoding utf8
+
             $tabla.Clear()
         }
     }
-    catch
-    {
-        $mensaje = $($_.Exception.Message)
-        Write-Error $mensaje
-    }  
+    catch {
+        Write-Error $_.Exception.Message
+    }
 }
- 
+
 cls
 main
