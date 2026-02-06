@@ -29,7 +29,9 @@ WITH CTE AS
     inner join SQLdmRepository.dbo.MetricInfo MI with (nolock)
         ON A.Metric = MI.Metric
     where A.ServerName is not null
-      and dateadd(hour,-5,A.UTCOccurrenceDateTime) >= dateadd(hour,-2,getdate())
+      -- FILTRO DE TIEMPO (MISMA LÓGICA, VENTANA REAL)
+      and dateadd(hour,-5,A.UTCOccurrenceDateTime) >= dateadd(hour,-4,getdate())
+      and A.Message not like '%login%'
       and MI.Name IN
       (
         'Database Full (Percent)',
@@ -46,22 +48,28 @@ WITH CTE AS
       and A.Severity in (8,4)
 )
 select 
-    Instancia,
-    max(Fecha) as Fecha,
-    Alerta,
-    max(Mensaje) as Mensaje,
-    max(Severidad) as Severidad
-from CTE
+    P.Instancia,
+    max(P.Fecha) as Fecha,
+    P.Alerta,
+    (
+        select top(1)
+            S.Mensaje
+        from CTE S
+        where P.Instancia = S.Instancia
+          and P.Alerta = S.Alerta
+        order by S.Fecha desc
+    ) as Mensaje
+from CTE P
 group by
-    Instancia,
-    Alerta
+    P.Instancia,
+    P.Alerta
 order by 
-    Instancia,
-    max(Fecha)
+    P.Instancia,
+    max(P.Fecha)
 "@
 
 # =========================================================
-# Método de ejecución de sentencias SQL
+# Método de ejecución SQL
 # =========================================================
 function Exec-SQLQuery ($instance, $querySQL)
 {
@@ -103,7 +111,6 @@ function main()
         return
     }
 
-    # Limpieza de logs anteriores
     Remove-Item "$strPath\*.log" -Force -ErrorAction SilentlyContinue
 
     $arInstancia = New-Object System.Collections.ArrayList
@@ -141,15 +148,9 @@ where Engine = 'S'
 
             $dtInsAUX = Exec-SQLQuery "ECBPPRQ23,11423" $queryInstancias
 
-            if ($dtInsAUX -eq $null -or $dtInsAUX.Rows.Count -eq 0) {
-                continue
-            }
-
             foreach ($insAux in $dtInsAUX) {
 
-                # =================================================
-                # NORMALIZACIÓN DE INSTANCIA (EVITA ",,")
-                # =================================================
+                # NORMALIZACIÓN DE INSTANCIA
                 $instance1 = $insAux["Instancia1"].ToString()
                 $instance1 = $instance1 -replace ',+', ','
                 $instance1 = $instance1.Trim(',')
