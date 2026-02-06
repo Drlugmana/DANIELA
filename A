@@ -1,14 +1,29 @@
-DEBUG - Instancia detectada: ECBPPRQ48\Q48
-main : Exception calling "Fill" with "1" argument(s): "A network-related or 
-instance-specific error occurred while establishing a connection to SQL 
-Server. The server was not found or was not accessible. Verify that the 
-instance name is correct and that SQL Server is configured to allow remote 
-connections. (provider: TCP Provider, error: 0 - The wait operation timed 
-out.)"
-At C:\AdministracionBDD\Robots\Robot-DynatraceIderaCopy.ps1:373 char:1
-+ main
-+ ~~~~
-    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorExcep 
-   tion
-    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorExceptio 
-   n,main
+# Script SOLO para ver valores de variables
+
+$dtLogs = Exec-SQLQuery "ECBPPRQ23,11423" $querySQLLogs
+
+foreach ($drLogs in $dtLogs)
+{
+    $instancia = $drLogs["Instancia"]
+
+    Write-Host "------------------------------------" -ForegroundColor DarkGray
+    Write-Host "Instancia desde SQLdm:" $instancia -ForegroundColor Cyan
+
+    $queryInstancias = @"
+select 
+    concat(MachineName,trim(InstanceName),PortNumber) as Instancia1,
+    concat(MachineName,InstanceName) as Instancia2
+from Administracion_DB.dbo.connectlist
+where Engine = 'S'
+  and Status <> 'A'
+  and concat(MachineName,InstanceName) = '$instancia'
+"@
+
+    $dtInsAUX = Exec-SQLQuery "ECBPPRQ23,11423" $queryInstancias
+
+    foreach ($insAux in $dtInsAUX)
+    {
+        Write-Host "Instancia1 (para conexión):" $insAux["Instancia1"] -ForegroundColor Yellow
+        Write-Host "Instancia2 (nombre lógico):" $insAux["Instancia2"] -ForegroundColor Green
+    }
+}
