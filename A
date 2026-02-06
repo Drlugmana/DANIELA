@@ -114,9 +114,16 @@ function main()
         Remove-Item "$strPath\*" -Recurse -Force
         $arInstancia = New-Object -TypeName System.Collections.ArrayList
         $dtLogs = Exec-SQLQuery "ECBPPRQ23,11423"  $querySQLLogs 
+
         foreach($drLogs in $dtLogs)
         {      
-            [string] $instancia = $drLogs["Instancia"] 
+            [string] $instancia = $drLogs["Instancia"]
+
+            # =========================
+            # DEBUG SOLICITADO
+            # =========================
+            Write-Host "DEBUG - Instancia detectada:" $instancia -ForegroundColor Cyan
+
             if(!$arInstancia.Contains($instancia))
             {           
                 [string] $queryInstancias= $(
@@ -133,21 +140,28 @@ function main()
                 and concat(MachineName,InstanceName) = '$instancia'
                 "
                 )
+
                 $dtInsAUX = Exec-SQLQuery "ECBPPRQ23,11423"  $queryInstancias 
+
                 foreach($insAux in $dtInsAUX)
                 {      
                     [string] $instance1 = $insAux["Instancia1"] 
                     [string] $instance2 = $insAux["Instancia2"]
+
                     $dtVer = Exec-SQLQuery $instance1 $querySQLVersion
+
                     [int] $i = 0
                     foreach($drVer in $dtVer)
                     {
                         $i++
                     }
+
                     if($i -ge 1)
                     {
                         [string] $versionAux = $drVer["Version"]
-                        if($versionAux.ToString() -like "*2000*" -or $versionAux.ToString() -like "*2005*" -or $versionAux.ToString() -like "*2008*")
+                        if($versionAux.ToString() -like "*2000*" -or
+                           $versionAux.ToString() -like "*2005*" -or
+                           $versionAux.ToString() -like "*2008*")
                         {
                             $arInstancia.Add($instancia) | Out-Null
                         }
@@ -155,41 +169,39 @@ function main()
                 }
             }
         }
+
         foreach($instancia in $arInstancia)
         {
-            #Creo Tabla
             $tabla = New-Object System.Data.DataTable   
-            #Agrego y Creo Columnas
             $tabla.Columns.Add("Mensaje", "System.String") | Out-Null
-            #Busco logs por instancia
+
             foreach($drLogs in $dtLogs)
             { 
                 if($instancia -eq $drLogs["Instancia"])
                 {
-                    #Agrego Registros
                     $row = $tabla.NewRow()
-                    $row.Mensaje = $drLogs["Instancia"] + "`t" + $drLogs["Alerta"] + "`t" + $drLogs["Severidad"] + "`t" + $drLogs["Mensaje"]
+                    $row.Mensaje = $drLogs["Instancia"] + "`t" +
+                                   $drLogs["Alerta"] + "`t" +
+                                   $drLogs["Severidad"] + "`t" +
+                                   $drLogs["Mensaje"]
                     $tabla.Rows.Add($row)
                 }
             }
-            #Construyo parh y archivo
+
             [string] $strFile = $instancia.Replace('\','_')
-            [string] $strPathAUX = ""
-            $strPathAUX = "$strPath\$strFile.log"
-            [string] $mensaje = "OK"
-            Write-Host ""
-            Write-Host "$instancia" -BackgroundColor DarkYellow -ForegroundColor white 
-            $strPath
-            #Guarda Archivo
-            $tabla
-            $tabla | Format-Table -HideTableHeaders -AutoSize | Out-File -FilePath $strPathAUX -Encoding utf8
+            [string] $strPathAUX = "$strPath\$strFile.log"
+
+            Write-Host "Generando log para:" $instancia -ForegroundColor Green
+
+            $tabla | Format-Table -HideTableHeaders -AutoSize |
+                     Out-File -FilePath $strPathAUX -Encoding utf8
+
             $tabla.Clear()
         }
     }
     catch
     {
-        $mensaje = $($_.Exception.Message)
-        Write-Error $mensaje
+        Write-Error $($_.Exception.Message)
     }  
 }
  
